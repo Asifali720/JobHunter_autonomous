@@ -325,13 +325,12 @@ if __name__ == "__main__":
         print(f"📊 Total Raw Jobs Gathered: {len(raw_jobs)}")
 
         if not raw_jobs:
-            print("⚠️ No new jobs found across LinkedIn & Indeed in the last 24 hours.")
-            # send_whatsapp_message("No new jobs found across LinkedIn & Indeed in the last 24 hours.")
+            send_whatsapp_message("No new jobs found across LinkedIn & Indeed in the last 24 hours.")
         else:
             final_summary = match_jobs_with_ai(cv_content, raw_jobs)
             print("\n--- FINAL SUMMARY FOR WHATSAPP ---")
             print(f"summary: {final_summary}")
-            # send_whatsapp_message(final_summary)
+            send_whatsapp_message(final_summary)
 
     except Exception as err:
         print(f"💥 Critical Execution Error: {err}")
