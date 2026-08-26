@@ -1,9 +1,12 @@
 import os
 import json
+import time
 import requests
+import urllib.parse
 from PyPDF2 import PdfReader
 from jobspy import scrape_jobs
 from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright
 
 load_dotenv()
 
@@ -11,10 +14,10 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ULTRAMSG_INSTANCE_ID = os.getenv("ULTRAMSG_INSTANCE_ID")
 ULTRAMSG_TOKEN = os.getenv("ULTRAMSG_TOKEN")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
-
+LINKEDIN_LI_AT_COOKIE = os.getenv("LINKEDIN_LI_AT_COOKIE")
 
 CV_FILE_PATH = "cv/Asif-Lashari-resume.pdf"
-JOB_SEARCH_LOCATION = "Pakistan"  # Change or leave empty for Remote/Global
+JOB_SEARCH_LOCATION = "Pakistan"
 
 
 def extract_cv_text(pdf_path):
@@ -32,9 +35,7 @@ def extract_cv_text(pdf_path):
 
 
 def generate_smart_search_queries(cv_text):
-    """
-    Passes CV to LLM to dynamically generate multiple relevant search terms.
-    """
+    """Analyzes CV with AI to generate search terms and boolean query."""
     print("🧠 Analyzing CV with AI to generate search terms...")
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -42,57 +43,161 @@ def generate_smart_search_queries(cv_text):
         "Content-Type": "application/json"
     }
 
-    prompt = f"""
-    You are an expert Technical Recruiter. Analyze the candidate's CV below and extract 3 broader job title variations for LinkedIn search.
+    system_instruction = (
+        "You are an Elite AI Talent Acquisition Specialist and Sourcing Specialist. "
+        "Your task is to analyze candidate resumes and generate optimal search queries "
+        "tailored for LinkedIn Jobs Tab, Indeed, and LinkedIn Content Posts search."
+    )
 
-    CANDIDATE CV:
-    {cv_text[:3000]}
+    user_prompt = f"""
+CANDIDATE CV DATA:
+{cv_text}
 
-    REQUIREMENT:
-    Return ONLY a JSON array of 3 string search terms (from specific to slightly broader).
-    Example: ["Full Stack AI Engineer", "Python Developer", "Full Stack Developer"]
+OBJECTIVE:
+Generate search parameters for scraping job portals and LinkedIn content posts.
 
-    Output format MUST be valid JSON only (a raw JSON list of strings). No prose, no markdown codeblocks.
-    """
+OUTPUT REQUIREMENT:
+Return ONLY a JSON object with two keys:
+1. "standard_keywords": A list of 4-5 job titles/skills (e.g., ["Full Stack AI Engineer", "Python Developer"]).
+2. "boolean_post_query": A simple, effective search string for LinkedIn Posts feed search.
+
+CRITICAL INSTRUCTIONS FOR "boolean_post_query":
+- DO NOT use over-engineered Boolean syntax with complex nesting or too many brackets.
+- Keep it broad enough so real recruiter posts actually match.
+- Combine ONLY 2-3 primary skill keywords with simple "hiring" or "looking for" terms and location/remote.
+- GOOD EXAMPLES: 
+  - "hiring Mern / Python Developer Pakistan"
+  - "looking for Full Stack Engineer remote"
+  - "hiring AI Engineer"
+- BAD EXAMPLE (DO NOT DO THIS): ("python" OR "django" OR "fastapi") AND ("hiring" OR "recruiting") AND ("pakistan" OR "remote")
+
+STRICT CONSTRAINTS:
+- Output MUST be valid JSON only. NO markdown wrapping.
+"""
 
     data = {
         "model": "deepseek/deepseek-chat",
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt}
+        ],
         "temperature": 0.2
     }
 
     try:
-        res = requests.post(url, json=data, headers=headers)
+        res = requests.post(url, json=data, headers=headers, timeout=15)
         if res.status_code == 200:
             content = res.json()['choices'][0]['message']['content'].strip()
-            if content.startswith("```json"):
+            if "```" in content:
                 content = content.replace("```json", "").replace("```", "").strip()
             parsed = json.loads(content)
-            if isinstance(parsed, list):
-                print(f"🎯 Dynamic Search Terms Generated: {parsed}")
-                return parsed
+            print(f"🎯 Dynamic Queries Generated: {parsed}")
+            return parsed
     except Exception as e:
         print(f"⚠️ Query generation fallback due to error: {e}")
     
-    # Fallback broader queries
-    return ["Full Stack Developer", "Python Developer", "AI Engineer"]
+    return {
+        "standard_keywords": ["Full Stack Developer", "Python Developer"],
+        "boolean_post_query": '("python" OR "full stack") AND "hiring" AND "Pakistan"'
+    }
 
 
-def fetch_linkedin_jobs(search_terms):
-    """Scrapes LinkedIn Job tab listings across multiple keywords."""
+def generate_linkedin_posts_search_url(boolean_query):
+    encoded_query = urllib.parse.quote(boolean_query)
+    return f"https://www.linkedin.com/search/results/content/?keywords={encoded_query}&origin=FACETED_SEARCH&sortBy=%5B%22date_posted%22%5D&datePosted=%5B%22past-24h%22%5D"
+
+
+def scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=4):
+    """Scrapes raw LinkedIn Posts Feed using Playwright with Cookie Authentication."""
+    if not LINKEDIN_LI_AT_COOKIE:
+        print("⚠️ LINKEDIN_LI_AT_COOKIE missing in .env! Skipping LinkedIn Posts Scraper.")
+        return []
+
+    print("🚀 Launching Playwright to scrape LinkedIn Feed Posts...")
+    search_url = generate_linkedin_posts_search_url(boolean_query)
+    extracted_posts = []
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+
+            # Session Cookie Inject
+            context.add_cookies([{
+                'name': 'li_at',
+                'value': LINKEDIN_LI_AT_COOKIE,
+                'domain': '.www.linkedin.com',
+                'path': '/'
+            }])
+
+            page = context.new_page()
+            page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(4)
+
+            # Dynamic Scroll for lazy loading
+            for i in range(max_scrolls):
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+
+            post_cards = page.locator("div.reusable-search__result-container, div.feed-shared-update-v2").all()
+
+            for card in post_cards:
+                try:
+                    text = card.inner_text().strip()
+                    if not text or len(text) < 40:
+                        continue
+
+                    # Extract Direct Post Link
+                    link_el = card.locator("a[href*='/feed/update/']").first
+                    post_url = link_el.get_attribute("href") if link_el.count() > 0 else search_url
+
+                    extracted_posts.append({
+                        "source": "LinkedIn Posts",
+                        "title": "Recruiter Post",
+                        "company": "Recruiter / Individual",
+                        "location": JOB_SEARCH_LOCATION,
+                        "job_url": post_url.split('?')[0], # Clean URL
+                        "description": text[:800] # Pass text snippet for AI evaluation
+                    })
+                    print(f"LinkedIn Post Scraped: {post_url}")
+                except Exception:
+                    continue
+
+            browser.close()
+            print(f"✅ LinkedIn Posts Scraped: {len(extracted_posts)} posts found.")
+    except Exception as e:
+        print(f"❌ Error scraping LinkedIn Posts with Playwright: {e}")
+
+    return extracted_posts
+
+
+def fetch_multi_source_jobs(search_data):
+    """Fetches jobs from JobSpy (LinkedIn Jobs & Indeed) AND Playwright (LinkedIn Posts)."""
+    keywords = search_data.get("standard_keywords", ["Full Stack Developer"])
+    boolean_query = search_data.get("boolean_post_query", '("python" OR "full stack") AND "hiring"')
+    
     all_jobs = []
-    seen_urls = set()  # Duplicates remove karne ke liye
+    seen_urls = set()
 
-    for term in search_terms:
-        print(f"🔍 Searching LinkedIn for keyword: '{term}'...")
+
+    post_jobs = scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=4)
+    for pj in post_jobs:
+        if pj["job_url"] not in seen_urls:
+            seen_urls.add(pj["job_url"])
+            all_jobs.append(pj)
+
+    for term in keywords:
+        print(f"🔍 Searching LinkedIn Jobs Tab & Indeed for: '{term}'...")
         try:
             jobs = scrape_jobs(
-                site_name=["linkedin"],
+                site_name=["linkedin", "indeed"],
                 search_term=term,
                 location=JOB_SEARCH_LOCATION,
-                results_wanted=15,
-                hours_old=48,  # Increased to 48 hours for better yield
-                country_indeed='USA'
+                results_wanted=40,
+                hours_old=24,
+                country_indeed='pakistan'
             )
 
             for _, row in jobs.iterrows():
@@ -101,25 +206,28 @@ def fetch_linkedin_jobs(search_terms):
                     continue
 
                 seen_urls.add(job_url)
+                
+                site = str(row.get("site", "")).lower()
+                source_name = "LinkedIn Jobs Tab" if "linkedin" in site else "Indeed Jobs"
+
                 all_jobs.append({
+                    "source": source_name,
                     "title": str(row.get("title", "N/A")),
                     "company": str(row.get("company", "N/A")),
                     "location": str(row.get("location", "N/A")),
                     "job_url": job_url,
-                    "description": str(row.get("description", ""))[:500]
+                    "description": str(row.get("description", ""))[:400]
                 })
         except Exception as e:
             print(f"⚠️ Error fetching jobs for '{term}': {e}")
 
-    print(f"✅ Total Unique Scraped Jobs: {len(all_jobs)}")
+    print(f"✅ Total Items Processed Across All Sources: {len(all_jobs)}")
     return all_jobs
 
+
 def match_jobs_with_ai(cv_text, jobs):
-    """
-    Evaluates scraped jobs against the candidate's CV using a strict English Prompt.
-    Outputs WhatsApp-ready Markdown formatted report.
-    """
-    print("🤖 Screening and matching jobs against candidate profile...")
+    """Evaluates jobs with AI and categorizes output into WhatsApp markdown sections."""
+    print("🤖 Screening and matching jobs by source category...")
 
     openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -128,48 +236,68 @@ def match_jobs_with_ai(cv_text, jobs):
     }
 
     prompt = f"""
-You are an Elite AI Talent Acquisition Specialist and Career Advisor.
-Your objective is to evaluate a batch of newly posted LinkedIn jobs against a candidate's resume/CV and select ONLY high-conviction matches (>= 70% skill alignment).
+You are an Elite AI Talent Acquisition Specialist.
+Filter relevant jobs against candidate CV (Minimum 65% skill alignment) AND categorize them STRICTLY under their respective sources.
 
 CANDIDATE CV:
-{cv_text[:3500]}
+{cv_text[:3000]}
 
-AVAILABLE JOBS LIST:
+AVAILABLE JOBS DATA:
 {json.dumps(jobs, indent=2)}
 
-CRITICAL EVALUATION INSTRUCTIONS:
-1. Compare key technical skills, experience level, tools, and tech stack in the CV against each job description.
-2. Select ONLY jobs that strongly align with the candidate's expertise (Minimum 70% relevance threshold).
-3. If no job passes the 70% threshold, explicitly return: "No strong matching jobs found in today's scrape."
-4. Do NOT hallucinate application links. Use the exact `job_url` provided in the JSON input.
-5. Format the final output strictly for WhatsApp readability using WhatsApp formatting (*bold*, _italic_, links).
+INSTRUCTIONS:
+1. Group matched items into 3 separate WhatsApp markdown sections based on their `source` key:
+   - *📌 LinkedIn Jobs Posts* (Real recruiter posts)
+   - *📌 LinkedIn Jobs Tab*
+   - *📌 Indeed Jobs*
+2. If a section has no matches, write "No matching positions found today under this section."
+3. Format output specifically for WhatsApp readability using emojis, *bold*, and links.
 
-REQUIRED OUTPUT FORMAT PER MATCHED JOB:
+REQUIRED FORMAT:
+
+*📌 LinkedIn Jobs Posts:*
+🎯 *[Summary of Post/Role]*
+🏢 *Posted By:* [Company / Recruiter Name]
+💡 *Fit Analysis:* [1 short sentence]
+🔗 *Post Link:* [job_url]
+
+---
+
+*📌 LinkedIn Jobs Tab:*
 🎯 *[Job Title]*
 🏢 *Company:* [Company Name]
 📍 *Location:* [Location]
-💡 *Fit Analysis:* [1-2 sentences explaining why this matches the CV]
-🔗 *Apply / View Link:* [job_url]
+💡 *Fit Analysis:* [Reasoning]
+🔗 *Apply Link:* [job_url]
+
 ---
+
+*📌 Indeed Jobs:*
+🎯 *[Job Title]*
+🏢 *Company:* [Company Name]
+📍 *Location:* [Location]
+💡 *Fit Analysis:* [Reasoning]
+🔗 *Apply Link:* [job_url]
 """
 
     data = {
         "model": "deepseek/deepseek-chat",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
+        "temperature": 0.2
     }
 
-    response = requests.post(openrouter_url, json=data, headers=headers)
-    if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
-    else:
-        print(f"❌ OpenRouter Error: {response.text}")
-        return "⚠️ Error processing AI match report."
+    try:
+        response = requests.post(openrouter_url, json=data, headers=headers)
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        print(f"❌ OpenRouter Error: {e}")
+    return "⚠️ Error processing AI match report."
 
 
 def send_whatsapp_message(message_body):
     """Delivers report to WhatsApp via UltraMsg API."""
-    print("📱 Sending final report to WhatsApp...")
+    print("📱 Sending categorized report to WhatsApp...")
     url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
 
     payload = {
@@ -178,28 +306,32 @@ def send_whatsapp_message(message_body):
         "body": f"📋 *JOBHUNTER AUTONOMOUS - DAILY REPORT*\n\n{message_body}"
     }
 
-    response = requests.post(url, data=payload)
-    if response.status_code == 200:
-        print("✅ WhatsApp alert delivered successfully!")
-    else:
-        print(f"❌ UltraMsg Dispatch Error: {response.text}")
+    try:
+        response = requests.post(url, data=payload)
+        if response.status_code == 200:
+            print("✅ WhatsApp alert delivered successfully!")
+        else:
+            print(f"❌ UltraMsg Dispatch Error: {response.text}")
+    except Exception as e:
+        print(f"❌ WhatsApp Send Exception: {e}")
 
 
 if __name__ == "__main__":
     try:
         cv_content = extract_cv_text(CV_FILE_PATH)
+        search_data = generate_smart_search_queries(cv_content)
         
-        # Step 2: Generate Multiple Terms
-        smart_queries = generate_smart_search_queries(cv_content)
-        
-        # Step 3: Scrape for all terms
-        raw_jobs = fetch_linkedin_jobs(smart_queries)
+        raw_jobs = fetch_multi_source_jobs(search_data)
+        print(f"📊 Total Raw Jobs Gathered: {len(raw_jobs)}")
 
         if not raw_jobs:
-            send_whatsapp_message("No new LinkedIn jobs found matching your criteria in the last 48 hours.")
+            print("⚠️ No new jobs found across LinkedIn & Indeed in the last 24 hours.")
+            # send_whatsapp_message("No new jobs found across LinkedIn & Indeed in the last 24 hours.")
         else:
             final_summary = match_jobs_with_ai(cv_content, raw_jobs)
-            send_whatsapp_message(final_summary)
+            print("\n--- FINAL SUMMARY FOR WHATSAPP ---")
+            print(f"summary: {final_summary}")
+            # send_whatsapp_message(final_summary)
 
     except Exception as err:
         print(f"💥 Critical Execution Error: {err}")
