@@ -1,11 +1,9 @@
 name: JobHunter Autonomous Daily Automation
 
 on:
-  schedule:
-    # Cron Timing: Subah 9:00 AM Pakistan Time (PKT)
-    # Note: GitHub UTC time use karta hai (9:00 AM PKT = 4:00 AM UTC)
-    - cron: '9 15 * * *'
-  workflow_dispatch: # Is line se aap GitHub UI se Manual 'Run' bhi kar sakte hain
+  # schedule:
+  #   - cron: '9 15 * * *'
+  workflow_dispatch:
 
 jobs:
   run-jobhunter:
