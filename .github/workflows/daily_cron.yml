@@ -2,7 +2,7 @@ name: JobHunter Autonomous Daily Automation
 
 on:
   schedule:
-    - cron: '50 11 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:

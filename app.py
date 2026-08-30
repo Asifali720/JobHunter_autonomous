@@ -7,6 +7,7 @@ from PyPDF2 import PdfReader
 from jobspy import scrape_jobs
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
+from load_cookie import load_cookies_from_json
 
 load_dotenv()
 
@@ -14,7 +15,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ULTRAMSG_INSTANCE_ID = os.getenv("ULTRAMSG_INSTANCE_ID")
 ULTRAMSG_TOKEN = os.getenv("ULTRAMSG_TOKEN")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
-LINKEDIN_LI_AT_COOKIE = os.getenv("LINKEDIN_LI_AT_COOKIE")
+
 
 CV_FILE_PATH = "cv/Asif-Lashari-resume.pdf"
 JOB_SEARCH_LOCATION = "Pakistan"
@@ -107,11 +108,8 @@ def generate_linkedin_posts_search_url(boolean_query):
     return f"https://www.linkedin.com/search/results/content/?keywords={encoded_query}&origin=FACETED_SEARCH&sortBy=%5B%22date_posted%22%5D&datePosted=%5B%22past-24h%22%5D"
 
 
-def scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=4):
+def scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=6):
     """Scrapes raw LinkedIn Posts Feed using Playwright with Cookie Authentication."""
-    if not LINKEDIN_LI_AT_COOKIE:
-        print("⚠️ LINKEDIN_LI_AT_COOKIE missing in .env! Skipping LinkedIn Posts Scraper.")
-        return []
 
     print("🚀 Launching Playwright to scrape LinkedIn Feed Posts...")
     search_url = generate_linkedin_posts_search_url(boolean_query)
@@ -124,18 +122,18 @@ def scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=4):
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
 
-            # Session Cookie Inject
-            context.add_cookies([{
-                'name': 'li_at',
-                'value': LINKEDIN_LI_AT_COOKIE,
-                'domain': '.www.linkedin.com',
-                'path': '/'
-            }])
+            cookies = load_cookies_from_json()
+            print(f"🔑 Loaded {len(cookies)} cookies for LinkedIn authentication.")
 
+            # Session Cookie Inject
+            context.add_cookies(cookies)
+            print(f" search_url: {search_url}")
             page = context.new_page()
             page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
             time.sleep(4)
 
+            page_text = page.locator("body").inner_text()
+            print(f"page text: {page_text}...")  # Print first 200 chars for debugging
             # Dynamic Scroll for lazy loading
             for i in range(max_scrolls):
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
@@ -182,7 +180,8 @@ def fetch_multi_source_jobs(search_data):
     seen_urls = set()
 
 
-    post_jobs = scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=4)
+    post_jobs = scrape_linkedin_posts_with_playwright(boolean_query, max_scrolls=6)
+    print(f"🔹 LinkedIn Posts Scraped: {post_jobs}")
     for pj in post_jobs:
         if pj["job_url"] not in seen_urls:
             seen_urls.add(pj["job_url"])
@@ -323,6 +322,9 @@ if __name__ == "__main__":
         
         raw_jobs = fetch_multi_source_jobs(search_data)
         print(f"📊 Total Raw Jobs Gathered: {len(raw_jobs)}")
+        # final_summary = match_jobs_with_ai(cv_content, raw_jobs)
+        # print("\n--- FINAL SUMMARY FOR WHATSAPP ---")
+        # print(f"summary: {final_summary}")
 
         if not raw_jobs:
             send_whatsapp_message("No new jobs found across LinkedIn & Indeed in the last 24 hours.")
