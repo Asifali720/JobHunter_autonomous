@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Cron Test
+        run: |
+          echo "CRON IS WORKING"
+          date
+          echo "Event: ${{ github.event_name }}"
+          
       - name: Checkout Code
         uses: actions/checkout@v4
 
