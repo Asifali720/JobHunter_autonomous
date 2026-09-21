@@ -4,3 +4,4 @@ venv
 cookie.json
 ./cookie.json
 __pycache__
+/linkedin_user_data
