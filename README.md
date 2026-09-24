@@ -1,6 +1,6 @@
 # JobHunter Autonomous
 
-**JobHunter Autonomous** is an AI-powered job search automation system that continuously monitors multiple job sources, matches opportunities against your CV, and delivers curated results directly to WhatsApp.
+**JobHunter Autonomous** is an AI-powered job search automation system that continuously monitors multiple job sources, matches opportunities against your CV, and delivers curated results directly to Discord.
 
 ## What It Does
 
@@ -13,7 +13,7 @@ This autonomous agent runs daily (via GitHub Actions cron) and performs:
    - **Indeed** (via JobSpy)
    - **LinkedIn Posts Feed** (via Playwright with cookie auth) - catches recruiter posts like "hiring Python dev in Pakistan"
 4. **AI-Powered Matching** - Evaluates all gathered jobs against your CV (minimum 65% skill alignment) and categorizes results by source
-5. **WhatsApp Delivery** - Sends a formatted daily report via UltraMsg API
+5. **Discord Delivery** - Sends a formatted daily report to a Discord channel via webhook (auto-splits long reports to respect Discord's 2000-character limit)
 
 ## Architecture
 
@@ -40,14 +40,14 @@ This autonomous agent runs daily (via GitHub Actions cron) and performs:
 ┌─────────────────────────────────────┐
 │  AI Matching & Categorization       │
 │  - ≥65% skill alignment filter      │
-│  - 3 WhatsApp sections:             │
+│  - 3 report sections:               │
 │    • LinkedIn Jobs Posts            │
 │    • LinkedIn Jobs Tab              │
 │    • Indeed Jobs                    │
 └────────┬────────────────────────────┘
          ▼
 ┌─────────────────────────────────────┐
-│  WhatsApp Delivery (UltraMsg)       │
+│  Discord Delivery (Webhook)         │
 └─────────────────────────────────────┘
 ```
 
@@ -55,7 +55,7 @@ This autonomous agent runs daily (via GitHub Actions cron) and performs:
 
 - Python 3.10+
 - OpenRouter API key (for DeepSeek model)
-- UltraMsg WhatsApp API credentials
+- Discord webhook URL
 - LinkedIn `li_at` session cookie (for Posts feed scraping)
 - Your CV as PDF in `cv/` directory
 
@@ -64,7 +64,7 @@ This autonomous agent runs daily (via GitHub Actions cron) and performs:
 ### 1. Clone & Install Dependencies
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Asifali720/JobHunter_autonomous.git
 cd JobHunter_autonomous
 
 python3 -m venv venv
@@ -83,16 +83,24 @@ Create `.env` file in project root:
 # OpenRouter (DeepSeek model)
 OPENROUTER_API_KEY=your_openrouter_key
 
-# UltraMsg WhatsApp API
-ULTRAMSG_INSTANCE_ID=your_instance_id
-ULTRAMSG_TOKEN=your_token
-MY_PHONE_NUMBER=your_whatsapp_number_with_country_code
+# Discord Webhook
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_id/your_webhook_token
+
+# (Optional) Phone number kept for backward compatibility
+MY_PHONE_NUMBER=your_number_with_country_code
 
 # LinkedIn Session Cookie (for Posts feed)
 LINKEDIN_LI_AT_COOKIE=your_li_at_cookie_value
 ```
 
+**Getting a Discord webhook URL:**
+
+1. Open your Discord server → channel settings (⚙️)
+2. Go to **Integrations** → **Webhooks** → **New Webhook**
+3. Copy the **Webhook URL** and paste it into `.env` as `DISCORD_WEBHOOK_URL`
+
 **Getting LinkedIn `li_at` cookie:**
+
 1. Log into LinkedIn in browser
 2. Open DevTools (F12) → Application → Cookies → `www.linkedin.com`
 3. Copy value of `li_at` cookie
@@ -100,9 +108,11 @@ LINKEDIN_LI_AT_COOKIE=your_li_at_cookie_value
 ### 3. Add Your CV
 
 Place your resume PDF at:
+
 ```
 cv/Asif-Lashari-resume.pdf
 ```
+
 Or update `CV_FILE_PATH` in `app.py`.
 
 ### 4. Customize Location (Optional)
@@ -127,19 +137,17 @@ The workflow `.github/workflows/daily_cron.yml` runs daily at **04:00 UTC**.
 
 Go to Repository Settings → Secrets and variables → Actions → New repository secret:
 
-| Secret Name | Value |
-|-------------|-------|
-| `OPENROUTER_API_KEY` | Your OpenRouter API key |
-| `ULTRAMSG_INSTANCE_ID` | UltraMsg instance ID |
-| `ULTRAMSG_TOKEN` | UltraMsg token |
-| `MY_PHONE_NUMBER` | WhatsApp number (e.g., `923001234567`) |
-| `LINKEDIN_LI_AT_COOKIE` | LinkedIn `li_at` cookie value |
+| Secret Name               | Value                            |
+| ------------------------- | -------------------------------- |
+| `OPENROUTER_API_KEY`    | Your OpenRouter API key          |
+| `DISCORD_WEBHOOK_URL`   | Your Discord channel webhook URL |
+| `LINKEDIN_LI_AT_COOKIE` | LinkedIn`li_at` cookie value   |
 
 ### Manual Trigger
 
 Go to Actions tab → "JobHunter Autonomous Daily Automation" → Run workflow.
 
-## Output Format (WhatsApp)
+## Output Format (Discord)
 
 ```
 📋 *JOBHUNTER AUTONOMOUS - DAILY REPORT*
@@ -185,24 +193,24 @@ JobHunter_autonomous/
 
 ## Key Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `python-jobspy` | Scrapes LinkedIn Jobs & Indeed |
-| `playwright` | Browser automation for LinkedIn Posts |
-| `PyPDF2` | PDF text extraction |
-| `openai` | OpenRouter API client (DeepSeek) |
-| `python-dotenv` | Environment variable loading |
-| `requests` | HTTP calls to UltraMsg & OpenRouter |
+| Package           | Purpose                               |
+| ----------------- | ------------------------------------- |
+| `python-jobspy` | Scrapes LinkedIn Jobs & Indeed        |
+| `playwright`    | Browser automation for LinkedIn Posts |
+| `PyPDF2`        | PDF text extraction                   |
+| `openai`        | OpenRouter API client (DeepSeek)      |
+| `python-dotenv` | Environment variable loading          |
+| `requests`      | HTTP calls to Discord & OpenRouter    |
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| No jobs found | Check `LINKEDIN_LI_AT_COOKIE` validity (expires ~monthly) |
-| WhatsApp not received | Verify UltraMsg credentials & phone number format |
-| AI errors | Check OpenRouter API key & quota |
-| Playwright fails | Run `playwright install chromium` |
-| LinkedIn blocks | Reduce scroll frequency or add delays |
+| Issue                | Solution                                                                         |
+| -------------------- | -------------------------------------------------------------------------------- |
+| No jobs found        | Check`LINKEDIN_LI_AT_COOKIE` validity (expires ~monthly)                       |
+| Discord not received | Verify`DISCORD_WEBHOOK_URL` is valid & the webhook still exists in the channel |
+| AI errors            | Check OpenRouter API key & quota                                                 |
+| Playwright fails     | Run`playwright install chromium`                                               |
+| LinkedIn blocks      | Reduce scroll frequency or add delays                                            |
 
 ## License
 
