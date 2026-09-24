@@ -13,8 +13,6 @@ from load_cookie import load_cookies_from_json
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-ULTRAMSG_INSTANCE_ID = os.getenv("ULTRAMSG_INSTANCE_ID")
-ULTRAMSG_TOKEN = os.getenv("ULTRAMSG_TOKEN")
 MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
 DISCORD_WEBHOOK_URL=os.getenv("DISCORD_WEBHOOK_URL")
 date_time=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -143,34 +141,56 @@ def scrape_linkedin_posts_with_playwright(boolean_query):
                     time.sleep(4)
 
                     page_text = page.locator("body").inner_text()
-                    print(f"page text: {page_text}...")  # Print first 200 chars for debugging
-
+                    print(f"page text: {page_text}...")
+                    
                     prompt_content = f"""
-                    - You are an expert in extracting job posts from LinkedIn search results.
-                    - This is a LinkedIn search content job posts page.
-                    - Read this {page_text} and extract all job posts with their text content and direct post links which includes words "hiring" or "recruiting" and "pakistan" or "remote" if onsite find Karachi location only if Pakistan then find remote.
-                    - Return ONLY a JSON array of objects with keys: "source", "title", "company", "location", "job_url", "description".
-                    - In job_url, it should be a Post URL, not a search result page.
-                    - If no posts found, return an empty JSON array.
-                    Strictly return valid JSON only, no markdown or extra text.
-                    Sample output:
-                    [
-                    {{
-                        "source": "LinkedIn Posts Feed",
-                        "title": "Full Stack Developer",
-                        "company": "Tech Innovators Inc.",
-                        "location": "Karachi, Pakistan",
-                        "job_url": "https://www.linkedin.com/posts/techinnovators_hiring-full-stack-developer-activity-1234567890123456789",
-                        "description": "We are looking for a skilled Full Stack Developer to join our team. Must have experience with React and Node.js. Remote work available for the right candidate."
-                    }}
-                    ]
-                    Rules:
-                    - If no posts found, return an empty JSON array.
-                    - Only include posts that are actual job postings, not general content or articles.
-                    - If you see "onsite" plus other city like lahore rawalpindi etc instead of karachi then ignore that post and do not extract it.
-                    Match my Cv text {cv_text} with the posts and extract only relevant posts which are matching with my CV skills and experience.
-                    - If the post content is repeated shared by multiple users, only extract the original post and ignore duplicates.
-                    """
+### Role & Objective
+You are an expert LinkedIn job post extractor and matcher. Your task is to analyze the provided LinkedIn search results (`{page_text}`) and extract valid, relevant job posts based on strict criteria, location rules, and the candidate's CV (`{cv_text}`).
+
+---
+
+### Extraction Criteria & Rules
+
+1. **Keyword Filtering:**
+   - The post must contain words related to hiring/recruiting (e.g., "hiring", "recruiting").
+   - The post must be relevant to either **Pakistan** (if remote) or specifically **Karachi** (if onsite).
+   - Extract maximum posts that match the candidate's skills, tech stack, and experience as per the CV (`{cv_text}`).
+
+2. **Strict Location Rules:**
+   - **Remote Jobs:** Allowed anywhere in Pakistan (e.g., Karachi, Lahore, Islamabad, Faisalabad, etc.).
+   - **Onsite Jobs:** Allowed **ONLY** if the location is **Karachi**.
+   - **Exclusion:** If an onsite job is located in any other city (e.g., Lahore, Rawalpindi, Faisalabad, Islamabad, etc.), **ignore and skip it entirely**.
+
+3. **Job Relevance & CV Matching:**
+   - Only extract actual job posts (ignore general articles, posts, or company announcements).
+   - Filter and extract **only** those posts whose requirements match the skills, tech stack, and experience provided in the candidate's CV (`{cv_text}`).
+   - **Exclude** all types of internships, fresher roles, or trainee positions (e.g., Internship, Trainee, Internship Program, etc.).
+
+4. **Duplicates Handling:**
+   - If the exact same job post content is shared/reposted by multiple users, extract **only the original post** and ignore all duplicates.
+
+5. **URL Rule:**
+   - The `job_url` if post url not found don't include it. Should return the `search_url` instead. Do not generate any new URLs or modify the original post URL.
+
+---
+
+### Output Format
+- Return **ONLY** a valid JSON array of objects.
+- Do **NOT** include markdown formatting blocks (like ```json ... ```), conversational text, or explanations. Just pure JSON.
+- If no matching posts are found, return an empty JSON array `[]`.
+
+#### JSON Structure Schema:
+[
+  {{
+    "source": "LinkedIn Posts Feed",
+    "title": "Extracted Job Title",
+    "company": "Company Name",
+    "location": "Karachi, Pakistan / Remote, Pakistan",
+    "job_url": "Direct Post URL" / {search_url},
+    "description": "Full text description of the job post."
+  }}
+]
+"""
 
                     AI_response = requests.post(
                         "https://openrouter.ai/api/v1/chat/completions",
@@ -401,9 +421,6 @@ if __name__ == "__main__":
         
         raw_jobs = fetch_multi_source_jobs(search_data)
         print(f"📊 Total Raw Jobs Gathered: {len(raw_jobs)}")
-        # final_summary = match_jobs_with_ai(cv_content, raw_jobs)
-        # print("\n--- FINAL SUMMARY FOR WHATSAPP ---")
-        # print(f"summary: {final_summary}")
 
         if not raw_jobs:
             send_discord_webhook("No new jobs found across LinkedIn & Indeed in the last 24 hours.")
