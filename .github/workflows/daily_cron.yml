@@ -35,9 +35,7 @@ jobs:
       - name: Run JobHunter Script
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          ULTRAMSG_INSTANCE_ID: ${{ secrets.ULTRAMSG_INSTANCE_ID }}
-          ULTRAMSG_TOKEN: ${{ secrets.ULTRAMSG_TOKEN }}
-          MY_PHONE_NUMBER: ${{ secrets.MY_PHONE_NUMBER }}
           LINKEDIN_LI_AT_COOKIE: ${{ secrets.LINKEDIN_LI_AT_COOKIE }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python3 app.py

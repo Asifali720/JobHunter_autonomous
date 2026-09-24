@@ -86,8 +86,6 @@ OPENROUTER_API_KEY=your_openrouter_key
 # Discord Webhook
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_id/your_webhook_token
 
-# (Optional) Phone number kept for backward compatibility
-MY_PHONE_NUMBER=your_number_with_country_code
 
 # LinkedIn Session Cookie (for Posts feed)
 LINKEDIN_LI_AT_COOKIE=your_li_at_cookie_value

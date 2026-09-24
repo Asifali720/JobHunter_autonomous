@@ -13,7 +13,6 @@ from load_cookie import load_cookies_from_json
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MY_PHONE_NUMBER = os.getenv("MY_PHONE_NUMBER")
 DISCORD_WEBHOOK_URL=os.getenv("DISCORD_WEBHOOK_URL")
 date_time=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
