@@ -146,6 +146,18 @@ def scrape_linkedin_posts_with_playwright(boolean_query):
                     time.sleep(4)
 
                     page_text = page.locator("body").inner_text()
+
+                    auth_check_keywords = [
+                        "Let's do a quick verification",
+                         "enter the verification code",
+                         "Sign in to LinkedIn",
+                         "Join LinkedIn",
+                         "Security Verification"
+                    ]  
+                    if any(keyword in page_text for keyword in auth_check_keywords):
+                        print(f"⚠️ Security/Login prompt triggered on search query '{i}'. Fresh session/cookies required.")
+                        page.close()
+                        continue 
                     print(page_text[:600], "....")
                     
                     prompt_content = f"""
