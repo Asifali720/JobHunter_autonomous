@@ -146,6 +146,7 @@ def scrape_linkedin_posts_with_playwright(boolean_query):
                     time.sleep(4)
 
                     page_text = page.locator("body").inner_text()
+                    print(page_text[:600], "....")
                     
                     prompt_content = f"""
 ### Role & Objective
