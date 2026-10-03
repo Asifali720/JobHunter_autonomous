@@ -35,7 +35,7 @@ jobs:
       - name: Run JobHunter Script
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          LINKEDIN_LI_AT_COOKIE: ${{ secrets.LINKEDIN_LI_AT_COOKIE }}
+          LINKEDIN_BASE64_COOKIES: ${{ secrets.LINKEDIN_BASE64_COOKIES }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python3 app.py
