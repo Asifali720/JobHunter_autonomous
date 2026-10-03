@@ -20,6 +20,8 @@ date_time=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 CV_FILE_PATH = "cv/Asif-Lashari-resume.pdf"
 JOB_SEARCH_LOCATION = "Pakistan"
 
+MODEL='deepseek/deepseek-v4.1-flash'
+
 
 boolean_queries_link = []
 
@@ -80,7 +82,7 @@ STRICT CONSTRAINTS:
 """
 
     data = {
-        "model": "deepseek/deepseek-chat",
+        "model": MODEL,
         "messages": [
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": user_prompt}
@@ -202,7 +204,7 @@ You are an expert LinkedIn job post extractor and matcher. Your task is to analy
                             "Content-Type": "application/json"
                         },
                         json={
-                            "model": "deepseek/deepseek-chat",
+                            "model": MODEL,
                             "messages": [{"role": "user", "content": prompt_content}],
                             "temperature": 0.2
                         }
@@ -248,9 +250,20 @@ def fetch_multi_source_jobs(search_data):
     post_jobs = scrape_linkedin_posts_with_playwright(boolean_query)
     print(f"🔹 LinkedIn Posts Scraped: {post_jobs}")
     for pj in post_jobs:
-        if pj["job_url"] not in seen_urls:
-            seen_urls.add(pj["job_url"])
-            all_jobs.append(pj)
+        if not isinstance(pj, dict):
+            continue
+        job_url = pj.get("job_url") or pj.get("url") or pj.get("post_url") or ""
+        if not job_url or job_url in seen_urls:
+            continue
+        seen_urls.add(job_url)
+        all_jobs.append({
+            "source": pj.get("source", "LinkedIn Posts Feed"),
+            "title": pj.get("title", "N/A"),
+            "company": pj.get("company", "N/A"),
+            "location": pj.get("location", "N/A"),
+            "job_url": job_url,
+            "description": pj.get("description", "")
+        })
 
     for term in keywords:
         print(f"🔍 Searching LinkedIn Jobs Tab & Indeed for: '{term}'...")
@@ -310,13 +323,18 @@ AVAILABLE JOBS DATA:
 {json.dumps(jobs, indent=2)}
 
 INSTRUCTIONS:
-1. Group matched items into 3 separate WhatsApp markdown sections based on their `source` key:
+1. Group matched items into 3 separate Discord markdown sections based on their `source` key:
    - *📌 LinkedIn Jobs Posts* (Real recruiter posts)
    - *📌 LinkedIn Jobs Tab*
    - *📌 Indeed Jobs*
 2. If a section has no matches, write "No matching positions found today under this section."
 3. Format output specifically for WhatsApp readability using emojis, *bold*, and links.
 4. Do not link like [https://...] or (https://...). Use the format: 🔗 *Post Link:* job_url should simple link like https://...
+
+STRICT LOCATION RULES (VERY IMPORTANT):
+- If the job is located in Pakistan but OUTSIDE Karachi (e.g., Punjab, Lahore, Islamabad, Rawalpindi, Faisalabad, etc.), it MUST be a REMOTE job. Only extract it if it is remote; if it is onsite in any city other than Karachi, SKIP it entirely.
+- If the job is located in Karachi, extract it whether it is REMOTE or ONSITE (both are allowed).
+- Never include onsite jobs from cities other than Karachi.
 
 REQUIRED FORMAT:
 
@@ -346,7 +364,7 @@ REQUIRED FORMAT:
 """
 
     data = {
-        "model": "deepseek/deepseek-chat",
+        "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2
     }
